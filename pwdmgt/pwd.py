@@ -8,8 +8,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
 from getpass import getpass
+from datetime import datetime
 import sys
-import signal
 
 
 def derive_key(passkey: str) -> bytes:
@@ -39,17 +39,19 @@ def validate_passkey(fernet: Fernet, filepath: str) -> bool:
 
 
 def store_key_and_password(fernet: Fernet, key: str, password: str, filepath: str):
-    """Encrypt and store the key and password in a file using the same fernet instance."""
+    """Encrypt and store the key, password, and timestamp in a file using the same fernet instance."""
     encrypted_key = fernet.encrypt(key.encode())
     encrypted_password = fernet.encrypt(password.encode())
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    encrypted_timestamp = fernet.encrypt(timestamp.encode())
 
-    # Save the encrypted key and encrypted password to the file
+    # Save the encrypted key, encrypted password, and encrypted timestamp to the file
     with open(filepath, 'ab') as file:  # Append mode to store multiple keys/passwords
-        file.write(encrypted_key + b'\n' + encrypted_password + b'\n')
+        file.write(encrypted_key + b'\n' + encrypted_password + b'\n' + encrypted_timestamp + b'\n')
 
 
 def list_keys(fernet: Fernet, filepath: str) -> list:
-    """List all stored keys in the file."""
+    """List all stored keys and their timestamps in the file."""
     keys = []
     try:
         with open(filepath, 'rb') as file:
@@ -58,14 +60,16 @@ def list_keys(fernet: Fernet, filepath: str) -> list:
                 if not encrypted_key:
                     break  # End of file
                 encrypted_password = file.readline().strip()  # Read the associated encrypted password
+                encrypted_timestamp = file.readline().strip()  # Read the associated encrypted timestamp
 
-                # Try to decrypt the key name
+                # Try to decrypt the key name and timestamp
                 try:
                     decrypted_key = fernet.decrypt(encrypted_key).decode()
-                    keys.append((decrypted_key, encrypted_key, encrypted_password))
+                    decrypted_timestamp = fernet.decrypt(encrypted_timestamp).decode()
+                    keys.append((decrypted_key, decrypted_timestamp, encrypted_password))
                 except Exception:
                     # Append a placeholder if decryption fails
-                    keys.append(("[Cannot display: Invalid passkey or corrupted entry]", None, None))
+                    keys.append(("[Cannot display: Invalid passkey or corrupted entry]", "Unknown", None))
     except FileNotFoundError:
         print("No keys found. Store a password first.")
     return keys
@@ -126,8 +130,8 @@ while True:
 
         if keys:
             print("\nAvailable keys:")
-            for i, (key_name, _, _) in enumerate(keys, 1):
-                print(f"{i}. {key_name}")
+            for i, (key_name, timestamp, _) in enumerate(keys, 1):
+                print(f"{i}. {key_name} (stored on {timestamp})")
 
             choice = int(input("\nEnter the number of the key you want to retrieve: "))
             selected_key, _, encrypted_password = keys[choice - 1]
